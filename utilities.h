@@ -5,6 +5,7 @@
 #include <cstdlib>
 
 inline double restrict(double x, double min, double max) {
+    // restrict x in range [min, max]
     if (x > max) {return max;}
     if (x < min) {return min;}
     return x;

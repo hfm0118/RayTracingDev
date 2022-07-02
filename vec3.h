@@ -65,5 +65,12 @@ inline vec3 reflect(const vec3& x, const vec3& n) {
      // n is normal
      return x - n*dot(x,n)*2;
 }
+inline vec3 refract(const vec3& x, const vec3& n, double ri) {
+    double cosy = dot(-x, n);
+    if (cosy > 1) {cosy = 1;}
+    vec3 rout1 = (x+n*cosy) * ri;
+    vec3 rout2 = -n * sqrt(fabs(1.0 - rout1.l2norm()));
+    return rout1 + rout2;
+}
 
 #endif

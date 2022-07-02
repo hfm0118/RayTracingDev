@@ -18,6 +18,7 @@ public:
      vec3 hit_point;
      vec3 normal;
      double t;
+     bool rin_front;
      optics* material;
 };
 
@@ -27,15 +28,54 @@ public:
      // describes how light will be changed when hit an object
      vec3 color;
      bool do_reflect;
+     bool do_refract;
+     bool is_light;
      double scatter_rate;
+     double refractive_index;
 
      optics() {}
-     optics(vec3 c, double sr=1, bool rf=false) {
-          color = c; do_reflect = rf; scatter_rate = sr;
+     optics(vec3 c, double sr=1, bool rf=false, bool rfr=false, double ri=0, bool il=false) {
+          color = c; scatter_rate = sr; 
+          do_reflect = rf; do_refract = rfr; refractive_index = ri;
+          is_light = il;
      }
 
-     bool reflect_ray(const ray& rin, ray& rout, const record& rec, vec3& rcolor) const {
+     int reflect_ray(const ray& rin, ray& rout, const record& rec, vec3& rcolor) const {
           vec3 scatter_dir;
+          if (is_light) {
+               rcolor = color;
+               return 2;
+          }
+          if (do_refract) {
+               double ri = refractive_index;
+               if (rec.rin_front) {
+                    ri = 1.0/ri;
+               }
+               double cosx = dot(-rin.dir, rec.normal);
+               if (cosx > 1) {
+                    cosx = 1;
+               }
+               double sinx = sqrt(1 - cosx*cosx);
+               double reflect_ratio;
+               if (ri*sinx > 1) {
+                    reflect_ratio = 1.001;
+               }
+               else {
+                    // reflect_ratio = 0.1;
+                    double a = (1-ri)*(1-ri)*(1+ri)*(1+ri);
+                    reflect_ratio = a + (1-a)*pow(1-cosx, 5);
+               }
+               vec3 rout_dir;
+               if (random_in_one() < reflect_ratio) {
+                    rout_dir = reflect(rin.dir, rec.normal);
+               }
+               else {
+                    rout_dir = refract(rin.dir, rec.normal, ri);                 
+               }
+               rout = ray(rec.hit_point, rout_dir);
+               rcolor = color;
+               return 1;
+          }
           if (do_reflect) {
                vec3 reflect_dir = reflect(rin.dir, rec.normal);
                scatter_dir = normalize(reflect_dir + random3d()*scatter_rate);               
@@ -46,7 +86,8 @@ public:
           rout = ray(rec.hit_point, scatter_dir);
           rcolor = color;
           bool rt = (dot(scatter_dir, rec.normal) > 0);
-          return rt;          
+          if (rt) {return 1;}
+          return 0;          
      };
 };
 
@@ -81,6 +122,7 @@ public:
           if (d < 0) {
                return false;
           }
+          // use the nearest, legal root
           double root = (-b-sqrt(d)) / (2*a);
           if (root<0.0001 || root>tmax) {
                root = (-b+sqrt(d)) / (2*a);
@@ -93,9 +135,11 @@ public:
           rec.hit_point = r.value(root);
           vec3 normal = (rec.hit_point-center)/radius;
           if (dot(r.dir, normal) < 0) {
+               rec.rin_front = true;
                rec.normal = normal;
           }
           else {
+               rec.rin_front = false;
                rec.normal = -normal;
           }
           rec.material = (optics *)&material;
@@ -107,22 +151,9 @@ public:
 class world {
 public:
      std::vector<ball> objects;
+     vec3 sky_color;
 
      world() {}
-
-     world(std::string type) {
-          if (type == "simple") {
-               optics ground_material(vec3(0.5, 0.5, 0.5));
-               ball ground(vec3(0, -1000, 0), 1000, ground_material);
-               objects.push_back(ground);
-               optics mirror_material(vec3(0.8, 0.8, 0.8), 0, true);
-               ball mirror(vec3(0,1,0), 1, mirror_material);
-               objects.push_back(mirror);
-               optics ball_material(vec3(0.5, 0.6, 0.7));
-               ball reference(vec3(3, 0.3, 0), 0.3, ball_material);
-               objects.push_back(reference); 
-          }
-     }
 
      bool hit_something(const ray& r, record& rec, double tmax = 1e100) const {
           bool hit_flag = false;
@@ -153,15 +184,18 @@ vec3 calculate_color(const ray& r, const world& w, int depth) {
      if (w.hit_something(r, rec)) {
           ray rout;
           vec3 rcolor;
-          bool rflag = rec.material->reflect_ray(r, rout, rec, rcolor);
-          if (rflag) {
+          int rflag = rec.material->reflect_ray(r, rout, rec, rcolor);
+          if (rflag == 1) {
                return rcolor * calculate_color(rout, w, depth-1);
+          }
+          if (rflag == 2) {
+               return rcolor;
           }
           return vec3(0, 0, 0);
      }
 
-     vec3 sky_color(0.8, 0.9, 1.0);
-     return sky_color;
+     // does not hit anything
+     return w.sky_color;
 }
 
 
